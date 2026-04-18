@@ -1,27 +1,26 @@
 {
-  "name": "Template Skill",
+  "name": "Face Trace Skill",
   "version": "1.0.0",
   "interface": "hybrid",
   "endpoints": {
-    "webhook": "https://your-domain.ngrok-free.app/webhook",
-    "mcp": "https://your-domain.ngrok-free.app/mcp"
+    "webhook": "https://face-trace-skill.prathamvaidya.in/webhook",
+    "mcp": "https://face-trace-skill.prathamvaidya.in/mcp"
   },
   "triggers": [
+    { "channel": "media.photo", "routing_mode": "active" },
     { "channel": "interaction.dialog", "routing_mode": "active" }
   ],
   "domains": {
-    "general": "Handle general greetings and tests for the template skill. Match utterances like 'test template' or 'hello from template'."
+    "general": "Remember faces of people the user meets. Triggered when a photo is taken or when the user says things like 'name is [name]', 'who is [name]', or 'list people I met'."
   },
   "permissions": [
     "notification.send",
     "user.profile.read",
     "user.location.read"
   ],
-  "allowedTools": [
-    "mail.send"
-  ],
+  "allowedTools": ["mail.send"],
   "data_retention": {
     "max_days": 30,
-    "deletion_webhook": "https://your-domain.ngrok-free.app/delete-user"
+    "deletion_webhook": "https://face-trace-skill.prathamvaidya.in/delete-user"
   }
 }
