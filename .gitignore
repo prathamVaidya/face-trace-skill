@@ -4,3 +4,10 @@ dist
 data
 
 .env
+# Python
+face_service/__pycache__/
+face_service/venv/
+*.pyc
+
+# DB
+faces.db

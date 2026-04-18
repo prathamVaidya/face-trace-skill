@@ -1,4 +1,7 @@
 {
   "signal": "SIGTERM",
-  "delay": 500
+  "delay": 1000,
+  "events": {
+    "restart": "kill $(lsof -t -i:${PORT:-8087}) 2>/dev/null || true"
+  }
 }
