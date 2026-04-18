@@ -1,119 +1,178 @@
-# 🛠️ Trace Template Skill
+# Face Trace Skill
 
-This is a minimal, production-ready template for building **Trace Skills**. It includes everything you need to handle background events (Webhooks) and voice-native interactions (MCP).
+A Trace AI Glass skill that remembers faces. When you meet someone, take a photo — the skill generates a face embedding and saves it. Next time you see the same person, take another photo and the skill identifies them and speaks their name.
 
 ---
 
-## 🚀 Quickstart
+## Architecture
 
-### 1. Setup
+This is a **hybrid skill** with two components:
+
+1. **TypeScript server** (`src/`) — Express app handling Trace webhook and MCP endpoints
+2. **Python face service** (`face_service/`) — FastAPI app using DeepFace for face embedding and matching
+
+```
+User takes photo
+  → media.photo webhook → TypeScript server
+  → calls Python /embed → generates 512-dim Facenet512 embedding
+  → if match found → callback_url → TTS: "That's [Name]!"
+  → if no match → saves pending photo → TTS: "Say name is [name]"
+
+User says "name is John"
+  → interaction.dialog MCP → TypeScript server
+  → links name to pending photo embedding → saves to SQLite
+
+User takes photo again
+  → same flow → matches embedding → TTS: "That's John!"
+```
+
+---
+
+## Setup
+
+### Prerequisites
+- Node.js v18+
+- Python 3.10+
+- pnpm
+
+### 1. TypeScript server
+
 ```bash
-mkdir trace_skill
-cd trace_skill
-git clone git@github.com:EndlessRiverAI/trace-template-skill.git
-cd trace-template-skill
-npm install
+pnpm install
 cp .env.example .env
 ```
-Fill in your `TRACE_HMAC_SECRET` in `.env` once you register your skill.
 
-### 2. Local Development
-```bash
-npm run dev
+Fill in `.env`:
+```env
+PORT=8087
+TRACE_HMAC_SECRET=your_hmac_secret_from_dashboard
+TRACE_SKILL_ID=your_skill_id
+BRAIN_BASE_URL=https://brain.endlessriver.ai
+FACE_SERVICE_URL=http://localhost:5001
 ```
-In a separate terminal, expose your local server to the internet using **localhost.run**:
+
 ```bash
-ssh -R 80:localhost:3000 nokey@localhost.run
+pnpm dev
 ```
-*Take note of the `https` URL localhost.run provides (e.g., `https://21231e1.localhost.run`).*
+
+### 2. Python face service
+
+```bash
+cd face_service
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --port 5001
+```
+
+### 3. Expose to internet
+
+```bash
+ngrok http 8087
+```
+
+Update your skill endpoints in the Trace Dashboard with the ngrok URL.
 
 ---
 
-## 📝 Manifest & Registration
+## Manifest
 
-Your skill is defined by the `manifest.json`. You must submit this manifest via the **Trace Developer Dashboard**.
-
-### Key Fields:
-- **`name`**: Human-readable name of your skill.
-- **`interface`**: `hybrid` allows both Webhooks and MCP.
-- **`triggers`**: Defines what events your skill "listens" to. By default, it listens to `interaction.dialog` (voice).
-- **`permissions`**: List of permissions your skill needs. Common ones:
-    - `notification.send`: (Implicit) Ability to sent toasts/TTS.
-    - `user.profile.read`: Ability to see the user's name.
-    - `user.location.read`: Ability to see city/country/GPS.
-- **`domains`**: Natural language descriptions that tell the Trace Router when to send an event to your skill.
-- **`allowedTools`**: Declares which platform-managed tools (like `mail.send`) your skill can use.
-
-### Registration Steps:
-1. Go to **Dashboard** → **Skills** → **Create New Skill**.
-2. Paste your localhost.run URL into the **Webhook** and **MCP** endpoint fields.
-3. Use the contents of `manifest.json` as a guide for your configuration.
-    Sample manifest for this skill:
-     ```jsx
-    {
-      "name": "Template Skill",
-      "version": "1.0.0",
-      "interface": "hybrid",
-      "endpoints": {
-        "webhook": "https://your-domain.localhost.run/webhook",
-        "mcp": "https://your-domain.localhost.run/mcp"
-      },
-      "triggers": [
-        { "channel": "interaction.dialog", "routing_mode": "active" }
-      ],
-      "domains": {
-        "general": "Handle general greetings and tests for the template skill. Match utterances like 'test template' or 'hello from template'."
-      },
-      "permissions": [
-        "notification.send",
-        "user.profile.read",
-        "user.location.read"
-      ],
-      "allowedTools": [
-        "mail.send"
-      ],
-      "data_retention": {
-        "max_days": 30,
-        "deletion_webhook": "https://your-domain.localhost.run/delete-user"
-      }
-    }
-    ```
-4. **Save** and copy the **HMAC Secret** into your `.env` file.
+```json
+{
+  "name": "Face Trace Skill",
+  "interface": "hybrid",
+  "triggers": [
+    { "channel": "media.photo", "routing_mode": "active" },
+    { "channel": "interaction.dialog", "routing_mode": "active" }
+  ],
+  "domains": {
+    "human_face": "Handle queries if the image contains a human face. Only route here.",
+    "remember_name": "Handle query when user tells the name of the human or asks to save."
+  },
+  "permissions": ["notification.send", "user.profile.read", "user.location.read"]
+}
+```
 
 ---
 
-## 🔌 Using Platform Actions
+## API
 
-This template shows you how to return **responses** that trigger actions on the user's glasses:
+### TypeScript Server
 
-- **Notifications**: Toast messages and TTS.
-- **Feed Items**: Logging activity to the daily feed.
-- **Platform Tools**: Sending emails or creating calendar events via `tool_call`.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/webhook` | Receives `media.photo` and `interaction.dialog` events from Trace |
+| POST | `/mcp` | JSON-RPC 2.0 endpoint for voice dialog |
+| POST | `/delete-user` | Deletes all stored data for a user |
 
-Check `src/index.ts` to see how these are constructed.
+### Python Face Service
 
----
-
-## 🔒 Security
-
-- **HMAC Verification**: All requests from Trace are signed. The `src/hmac.ts` utility ensures only legitimate Trace events are processed.
-- **Proxy IDs**: `user.id` is a stable, unique proxy for that specific user. Use it as a primary key in your database.
-- **User Info**: If you have the right permissions, the `user` object will contain `name`, `timezone`, and `location`. Timezone and Locale are always provided.
-
----
-
-## 🚢 Deployment
-
-Ready to go live? Check out the `deploy.sh` script for instructions on deploying to **Railway** or **Vercel**.
-
-1. Deploy your server.
-2. Get the new production URL.
-3. Update your endpoints in the **Trace Developer Dashboard**.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/embed` | `{ image_url }` → `{ embedding: float[] }` |
+| POST | `/match` | `{ image_url, candidates: [{id, embedding}] }` → `{ matched_id, distance }` |
+| GET | `/health` | Health check |
 
 ---
 
-### Need Help?
-Reach out to **ishaan@endlessriver.ai** or check the **[Developer Reference](https://endlessriver.ai/dashboard/docs)** (or `/dashboard/docs` on your Trace domain) for more details.
+## Voice Commands
 
-You can also follow the full **[Skill Builder Playbook](./docs/buildathon/SKILL_BUILDER_PLAYBOOK.md)** for a deep dive.
-**Happy Building! 🛠️**
+| Utterance | Action |
+|-----------|--------|
+| `name is [name]` | Links the name to the last captured pending photo |
+| `who is [name]` | Looks up a person by name and reads when you met them |
+| `list people` / `show people` | Lists up to 5 recently met people |
+
+---
+
+## Database
+
+SQLite (`faces.db`) with two tables:
+
+**`people`** — saved faces
+| Column | Type | Description |
+|--------|------|-------------|
+| id | TEXT | UUID |
+| user_id | TEXT | Proxied Trace user ID |
+| name | TEXT | Person's name |
+| image_url | TEXT | Original photo URL |
+| embedding | TEXT | JSON array of 512 floats (Facenet512) |
+| met_at | TEXT | ISO timestamp |
+| location | TEXT | `lat,lng` string if location permission granted |
+
+**`pending_photos`** — photos awaiting a name
+| Column | Type | Description |
+|--------|------|-------------|
+| id | TEXT | UUID |
+| user_id | TEXT | Proxied Trace user ID |
+| image_url | TEXT | Photo URL |
+| embedding | TEXT | Face embedding JSON |
+| created_at | TEXT | ISO timestamp |
+
+---
+
+## Face Recognition
+
+- **Model**: Facenet512 via DeepFace
+- **Detector**: RetinaFace
+- **Distance metric**: Cosine distance
+- **Match threshold**: 0.4 (lower = stricter)
+
+To tune sensitivity, adjust `MATCH_THRESHOLD` in `face_service/main.py`.
+
+---
+
+## Security
+
+- All webhook requests from Trace are verified using HMAC-SHA256 (`src/hmac.ts`)
+- Callback responses to Trace are signed with the same HMAC secret
+- User IDs are stable proxied identifiers — never raw identity
+
+---
+
+## Deployment
+
+1. Deploy TypeScript server to Railway or any Node host
+2. Deploy Python face service to a GPU-enabled host (recommended) or any Python host
+3. Set `FACE_SERVICE_URL` to the Python service's public URL
+4. Update webhook and MCP endpoints in the Trace Dashboard
