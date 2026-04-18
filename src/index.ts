@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import express, { Request, Response } from "express";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
@@ -34,7 +35,7 @@ app.post(
   verifyTraceSignature(TRACE_HMAC_SECRET),
   async (req: Request, res: Response) => {
     const { event, user, request_id } = req.body;
-    const userId = "1";
+    const userId = user.id;
     const channel: string = event?.channel;
 
     console.log("user: ", JSON.stringify(user));
@@ -49,42 +50,35 @@ app.post(
         return res.status(200).json({ status: "error", responses: [] });
       }
 
-      // Respond immediately, process in background
-      res.status(200).json({ status: "success", responses: [] });
+      const { callback_url } = req.body;
+
+      // Acknowledge immediately, process in background
+      res.status(202).json({ status: "processing", request_id });
 
       (async () => {
         const imageUrl: string = photoItem.url;
         const embedding = await generateEmbedding(imageUrl);
 
         if (!embedding) {
-          console.log(`[Webhook] No face detected in photo for user ${userId}`);
-          await sendPushResponse(user.id, [
+          console.log(`[Webhook] No face detected in photo for user ${user.id}`);
+          await postCallback(callback_url, request_id, [
             {
               type: "notification",
-              content: {
-                title: "No face detected",
-                body: "Couldn't find a face in the photo. Try again.",
-                tts: true,
-              },
+              content: { title: "No face detected", body: "Couldn't find a face in the photo. Try again.", tts: true },
             },
           ]);
           return;
         }
 
         // Try to match against stored people
-        const candidates = getPeopleWithEmbeddings(userId);
+        const candidates = getPeopleWithEmbeddings(user.id);
         if (candidates.length > 0) {
-          const { matched_id, distance } = await matchFace(
-            imageUrl,
-            candidates,
-          );
+          const { matched_id, distance } = await matchFace(imageUrl, candidates);
           if (matched_id) {
-            const person = findPersonById(userId, matched_id);
+            const person = findPersonById(user.id, matched_id);
             if (person) {
-              console.log(
-                `[Webhook] Matched ${person.name} (distance=${distance}) for user ${userId}`,
-              );
-              await sendPushResponse(user.id, [
+              console.log(`[Webhook] Matched ${person.name} (distance=${distance}) for user ${user.id}`);
+              await postCallback(callback_url, request_id, [
                 {
                   type: "notification",
                   content: {
@@ -101,18 +95,12 @@ app.post(
         }
 
         // No match — save as pending so user can name them
-        savePendingPhoto(uuidv4(), userId, imageUrl, embedding);
-        console.log(
-          `[Webhook] No match found, saved pending photo for user ${userId}`,
-        );
-        await sendPushResponse(user.id, [
+        savePendingPhoto(uuidv4(), user.id, imageUrl, embedding);
+        console.log(`[Webhook] No match found, saved pending photo for user ${user.id}`);
+        await postCallback(callback_url, request_id, [
           {
             type: "notification",
-            content: {
-              title: "New face captured!",
-              body: 'Say "name is [name]" to remember this person.',
-              tts: true,
-            },
+            content: { title: "New face captured!", body: 'Say "name is [name]" to remember this person.', tts: true },
           },
         ]);
       })();
@@ -167,7 +155,7 @@ app.post("/mcp", async (req: Request, res: Response) => {
 
     if (name === "handle_dialog") {
       const utterance: string = (args.utterance || "").toLowerCase().trim();
-      const userId: string = "1";
+      const userId: string = args.userId;
       // const userId: string =
       //   args.userId || args.user_id || args.context?.user?.id || "";
       console.log(
@@ -376,6 +364,30 @@ function formatDate(date: Date) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+async function postCallback(callbackUrl: string, requestId: string, responses: unknown[]) {
+  try {
+    const body = JSON.stringify({ request_id: requestId, status: "success", responses });
+    const timestamp = Date.now().toString();
+    const signature = "sha256=" + crypto
+      .createHmac("sha256", TRACE_HMAC_SECRET)
+      .update(`${timestamp}.${body}`)
+      .digest("hex");
+
+    const r = await fetch(callbackUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-trace-timestamp": timestamp,
+        "x-trace-signature": signature,
+      },
+      body,
+    });
+    if (!r.ok) console.error(`[Callback] ${r.status} ${await r.text()}`);
+  } catch (err) {
+    console.error("[Callback] Error:", err);
+  }
 }
 
 async function sendPushResponse(user_id: string, responses: unknown[]) {
