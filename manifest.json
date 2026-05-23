@@ -1,6 +1,6 @@
 {
   "name": "Face Trace Skill",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "interface": "hybrid",
   "endpoints": {
     "webhook": "https://face-trace-skill.prathamvaidya.in/webhook",
@@ -8,6 +8,7 @@
   },
   "triggers": [
     { "channel": "media.photo", "routing_mode": "active" },
+    { "channel": "instant.photo", "routing_mode": "active" },
     { "channel": "interaction.dialog", "routing_mode": "active" }
   ],
   "domains": {
