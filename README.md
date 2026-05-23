@@ -31,6 +31,7 @@ User takes photo again
 ## Setup
 
 ### Prerequisites
+
 - Node.js v18+
 - Python 3.10+
 - pnpm
@@ -43,6 +44,7 @@ cp .env.example .env
 ```
 
 Fill in `.env`:
+
 ```env
 PORT=8087
 TRACE_HMAC_SECRET=your_hmac_secret_from_dashboard
@@ -89,7 +91,11 @@ Update your skill endpoints in the Trace Dashboard with the ngrok URL.
     "human_face": "Handle queries if the image contains a human face. Only route here.",
     "remember_name": "Handle query when user tells the name of the human or asks to save."
   },
-  "permissions": ["notification.send", "user.profile.read", "user.location.read"]
+  "permissions": [
+    "notification.send",
+    "user.profile.read",
+    "user.location.read"
+  ]
 }
 ```
 
@@ -99,29 +105,29 @@ Update your skill endpoints in the Trace Dashboard with the ngrok URL.
 
 ### TypeScript Server
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/webhook` | Receives `media.photo` and `interaction.dialog` events from Trace |
-| POST | `/mcp` | JSON-RPC 2.0 endpoint for voice dialog |
-| POST | `/delete-user` | Deletes all stored data for a user |
+| Method | Endpoint       | Description                                                       |
+| ------ | -------------- | ----------------------------------------------------------------- |
+| POST   | `/webhook`     | Receives `media.photo` and `interaction.dialog` events from Trace |
+| POST   | `/mcp`         | JSON-RPC 2.0 endpoint for voice dialog                            |
+| POST   | `/delete-user` | Deletes all stored data for a user                                |
 
 ### Python Face Service
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/embed` | `{ image_url }` → `{ embedding: float[] }` |
-| POST | `/match` | `{ image_url, candidates: [{id, embedding}] }` → `{ matched_id, distance }` |
-| GET | `/health` | Health check |
+| Method | Endpoint  | Description                                                                 |
+| ------ | --------- | --------------------------------------------------------------------------- |
+| POST   | `/embed`  | `{ image_url }` → `{ embedding: float[] }`                                  |
+| POST   | `/match`  | `{ image_url, candidates: [{id, embedding}] }` → `{ matched_id, distance }` |
+| GET    | `/health` | Health check                                                                |
 
 ---
 
 ## Voice Commands
 
-| Utterance | Action |
-|-----------|--------|
-| `name is [name]` | Links the name to the last captured pending photo |
-| `who is [name]` | Looks up a person by name and reads when you met them |
-| `list people` / `show people` | Lists up to 5 recently met people |
+| Utterance                     | Action                                                |
+| ----------------------------- | ----------------------------------------------------- |
+| `name is [name]`              | Links the name to the last captured pending photo     |
+| `who is [name]`               | Looks up a person by name and reads when you met them |
+| `list people` / `show people` | Lists up to 5 recently met people                     |
 
 ---
 
